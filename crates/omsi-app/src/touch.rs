@@ -291,7 +291,7 @@ impl App {
             // the keyboard layout is bound whatever the bus, the automatic's D included)
             let scripted = |name: &str| p.vehicle.ty.program.trigger(name).is_some();
             let manual = scripted("kw_s_1") && scripted("kw_s_2") && !scripted("automatic_D");
-            let automatic = has("automatic_D");
+            let automatic = scripted("automatic_D");
 
             let gears: Vec<(&'static str, &'static str)> = vec![
                 (if automatic { "automatic_R" } else { "kw_s_R" }, "R"),

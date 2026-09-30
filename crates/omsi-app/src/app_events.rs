@@ -123,13 +123,27 @@ impl ApplicationHandler for App {
                 self.wheel(amount);
             }
             WindowEvent::CursorMoved { position, .. } => {
+                if self.touch.enabled {
+                    self.finger_move(0, glam::Vec2::new(position.x as f32, position.y as f32));
+                }
                 self.on_mouse_moved(position.x as f32, position.y as f32);
             }
             WindowEvent::MouseInput {
                 state,
                 button: winit::event::MouseButton::Left,
                 ..
-            } => self.left_button(event_loop, state == ElementState::Pressed),
+            } => {
+                if self.touch.enabled {
+                    let p = glam::Vec2::new(self.cursor.0, self.cursor.1);
+                    if state == ElementState::Pressed {
+                        self.finger_down(event_loop, 0, p);
+                    } else {
+                        self.finger_up(event_loop, 0, p, false);
+                    }
+                } else {
+                    self.left_button(event_loop, state == ElementState::Pressed);
+                }
+            }
             // a finger (a phone; see touch.rs)
             WindowEvent::Touch(t) => self.on_touch(event_loop, t),
             WindowEvent::RedrawRequested => {

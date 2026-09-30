@@ -283,58 +283,50 @@ impl App {
             t.throttle_r = Rect::new(w - pad - 64.0 * u, h - pad - th, 64.0 * u, th);
             let bh = 112.0 * u;
             t.brake_r = Rect::new(t.throttle_r.x - 14.0 * u - 80.0 * u, h - pad - bh, 80.0 * u, bh);
-            // the gearbox above the pedals: an automatic's R N D, a sequential lever's - N +,
-            // else a manual's whole gate - R, N and every gear its script has (`kw_s_1` ...),
+            // the gearbox above the pedals: always 8 buttons (6 gears)
             // in two rows as the H of the lever (R 1 3 5 over N 2 4 6)
+            // For automatics, '1' functions as 'D'.
             const MANUAL: [(&str, &str); 10] = [("kw_s_R", "R"), ("kw_s_N", "N"), ("kw_s_1", "1"), ("kw_s_2", "2"), ("kw_s_3", "3"), ("kw_s_4", "4"), ("kw_s_5", "5"), ("kw_s_6", "6"), ("kw_s_7", "7"), ("kw_s_8", "8")];
             // (the kind of gearbox by what the bus's own scripts answer to: every key of
             // the keyboard layout is bound whatever the bus, the automatic's D included)
             let scripted = |name: &str| p.vehicle.ty.program.trigger(name).is_some();
-            // (a manual's scripts answer to the gear keys; the LiAZ's KPP has - and + too, and
-            // triggers up to 10 whatever its box has: `antrieb_number_gears` says how many)
             let manual = scripted("kw_s_1") && scripted("kw_s_2") && !scripted("automatic_D");
-            let count = p.vehicle.ty.program.constant("antrieb_number_gears").map(|n| n.round() as usize).filter(|n| (1..=8).contains(n));
-            let gears: Vec<(&'static str, &'static str)> = if manual {
-                MANUAL.iter().copied().enumerate().filter(|(k, (a, _))| {
-                    matches!(*a, "kw_s_N") || (scripted(a) && count.is_none_or(|n| *k < n + 2))
-                }).map(|(_, g)| g).collect()
-            } else if has("automatic_D") {
-                vec![("automatic_R", "R"), ("automatic_N", "N"), ("automatic_D", "D")]
-            } else if has("kw_s_plus") {
-                vec![("kw_s_minus", "−"), ("kw_s_N", "N"), ("kw_s_plus", "+")]
-            } else {
-                vec![("kw_s_R", "R"), ("kw_s_N", "N"), ("kw_s_1", "1")]
-            };
-            // (the top of the gearbox: the doors go above it)
+            let automatic = has("automatic_D");
+
+            let gears: Vec<(&'static str, &'static str)> = vec![
+                (if automatic { "automatic_R" } else { "kw_s_R" }, "R"),
+                (if automatic { "automatic_N" } else { "kw_s_N" }, "N"),
+                (if automatic { "automatic_D" } else { "kw_s_1" }, "1"),
+                ("kw_s_2", "2"),
+                ("kw_s_3", "3"),
+                ("kw_s_4", "4"),
+                ("kw_s_5", "5"),
+                ("kw_s_6", "6"),
+            ];
+
+            // the top of the gearbox: the doors go above it
             let gy;
-            if manual && gears.len() > 3 {
-                // the gear engaged, as the lever's script has it
-                let engaged = p.vehicle.var("antrieb_getr_aktugang").map(|g| g.round() as i32);
-                let label_of = |g: i32| match g {
-                    -1 => "R",
-                    0 => "N",
-                    g => MANUAL.get(g as usize + 1).map(|x| x.1).unwrap_or(""),
+            // the gear engaged, as the lever's script has it
+            let engaged = p.vehicle.var("antrieb_getr_aktugang").map(|g| g.round() as i32);
+            let label_of = |g: i32| match g {
+                -1 => "R",
+                0 => "N",
+                g => MANUAL.get(g as usize + 1).map(|x| x.1).unwrap_or(""),
+            };
+            
+            let cols = gears.len().div_ceil(2);
+            let gw = (t.throttle_r.right() - t.brake_r.x) / cols as f32;
+            let gh = 36.0 * u;
+            let top = t.throttle_r.y - 10.0 * u - 2.0 * gh - 6.0 * u;
+            gy = top;
+            for (k, (action, letter)) in gears.iter().enumerate() {
+                let (col, row) = (k / 2, k % 2);
+                let on = if manual && engaged.is_some() {
+                    label_of(engaged.unwrap()) == *letter
+                } else {
+                    t.gear == Some(*letter)
                 };
-                let cols = gears.len().div_ceil(2);
-                let gw = (t.throttle_r.right() - t.brake_r.x) / cols as f32;
-                let gh = 36.0 * u;
-                let top = t.throttle_r.y - 10.0 * u - 2.0 * gh - 6.0 * u;
-                gy = top;
-                for (k, (action, letter)) in gears.iter().enumerate() {
-                    let (col, row) = (k / 2, k % 2);
-                    let on = match engaged {
-                        Some(g) => label_of(g) == *letter,
-                        None => t.gear == Some(*letter),
-                    };
-                    push(&mut b, Btn::Gear(action, letter), Rect::new(t.brake_r.x + gw * col as f32 + 3.0 * u, top + row as f32 * (gh + 6.0 * u), gw - 6.0 * u, gh), "", letter, on, false);
-                }
-            } else {
-                let gw = (t.throttle_r.right() - t.brake_r.x) / 3.0;
-                gy = t.throttle_r.y - 10.0 * u - 40.0 * u;
-                for (k, (action, letter)) in gears.iter().enumerate() {
-                    let on = t.gear == Some(*letter) && matches!(*letter, "R" | "N" | "D");
-                    push(&mut b, Btn::Gear(action, letter), Rect::new(t.brake_r.x + gw * k as f32 + 3.0 * u, gy, gw - 6.0 * u, 40.0 * u), "", letter, on, false);
-                }
+                push(&mut b, Btn::Gear(action, letter), Rect::new(t.brake_r.x + gw * col as f32 + 3.0 * u, top + row as f32 * (gh + 6.0 * u), gw - 6.0 * u, gh), "", letter, on, false);
             }
             // a manual without the automatic clutch of the settings: its clutch pedal, left of
             // the brake's buttons
@@ -417,7 +409,7 @@ impl App {
         }
     }
 
-    fn finger_down(&mut self, event_loop: &ActiveEventLoop, id: u64, p: Vec2) {
+    pub(crate) fn finger_down(&mut self, event_loop: &ActiveEventLoop, id: u64, p: Vec2) {
         self.touch.fingers.retain(|f| f.id != id);
         let menu_mode = self.game_menu.is_some() || self.chooser.is_some() || self.navigator.as_ref().is_some_and(|n| n.map_open());
         let t = &self.touch;
@@ -476,7 +468,7 @@ impl App {
         }
     }
 
-    fn finger_move(&mut self, id: u64, p: Vec2) {
+    pub(crate) fn finger_move(&mut self, id: u64, p: Vec2) {
         let u = self.touch.u;
         let Some(k) = self.touch.fingers.iter().position(|f| f.id == id) else { return };
         let last = self.touch.fingers[k].pos;
@@ -566,7 +558,7 @@ impl App {
         }
     }
 
-    fn finger_up(&mut self, event_loop: &ActiveEventLoop, id: u64, p: Vec2, cancelled: bool) {
+    pub(crate) fn finger_up(&mut self, event_loop: &ActiveEventLoop, id: u64, p: Vec2, cancelled: bool) {
         let Some(k) = self.touch.fingers.iter().position(|f| f.id == id) else { return };
         let f = self.touch.fingers.remove(k);
         if self.touch.fingers.iter().filter(|f| matches!(f.role, Role::Look | Role::Mouse)).count() < 2 {
